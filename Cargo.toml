@@ -1,38 +1,39 @@
 [package]
-# Rename: spelaiondb-plugin-<engine>. It is also the program's name, which is what SpelaionDB's
-# plugins.toml pins.
-name = "spelaiondb-plugin-example"
-description = "A made-up engine for SpelaionDB, served as a plugin: what a plugin's repository starts from"
+# The program's name, which is what SpelaionDB's plugins.toml pins.
+name = "spelaiondb-plugin-redis"
+description = "Redis for SpelaionDB, served as a plugin: Redis and the servers that speak its protocol"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/spelaion-dev/spelaiondb-plugin-template"
+repository = "https://github.com/spelaion-dev/spelaiondb-plugin-redis"
 publish = false
 
 [lib]
-name = "spelaion_driver_example"
+name = "spelaion_driver_redis"
 
 [[bin]]
-name = "spelaiondb-plugin-example"
-path = "src/bin/spelaiondb-plugin-example.rs"
+name = "spelaiondb-plugin-redis"
+path = "src/bin/spelaiondb-plugin-redis.rs"
 
-# The contract, the engines' dialects and the plugin's side of the protocol come from
-# SpelaionDB's repository, by tag (ADR-042): they are one workspace there, so one tag pins
-# them together. Moving the tag is how a plugin follows a protocol change.
+# The contract and the plugin's side of the protocol come from SpelaionDB's repository, by tag
+# (ADR-042): one tag pins them together. `plugin-sdk-v0.2.0` is the first with requests
+# (protocol 1.1, ADR-056), which are what this plugin is sent.
 [dependencies]
-spelaion-driver-api = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.1.1" }
-spelaion-plugin-sdk = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.1.1" }
-# A driver that writes names into its catalog queries takes its engine's quoting from here:
-# spelaion-dialect = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.1.1" }
+spelaion-driver-api = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.2.0" }
+spelaion-plugin-sdk = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.2.0" }
 # The same Arrow as SpelaionDB's: batches cross the two unchanged.
 arrow = { version = "60", default-features = false, features = ["ipc"] }
 async-trait = "0.1"
 futures-util = "0.3"
+# Redis's own client for Rust. TLS with rustls; no cluster, no Sentinel: SpelaionDB's core opens
+# every route, and this plugin talks only to the address it is given.
+redis = { version = "1", default-features = false, features = ["tokio-comp", "tokio-rustls-comp", "tls-rustls-webpki-roots"] }
+serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 
 [dev-dependencies]
 # The conformance set every plugin runs against its own program (tests/conformance.rs).
-spelaion-plugin-host = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.1.1" }
+spelaion-plugin-host = { git = "https://github.com/spelaion-dev/spelaiondb", tag = "plugin-sdk-v0.2.0" }
 
 [lints.rust]
 unsafe_code = "forbid"

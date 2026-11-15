@@ -1,34 +1,62 @@
 //! The conformance set of SpelaionDB's plugin protocol, run against this plugin's own program
-//! (ADR-042): it starts, speaks the protocol's version, opens sessions, returns results in the
-//! order the contract says, fails without hanging, obeys a cancel while a statement runs and
-//! ends when its input closes. What the engine's types look like is the engine's own tests.
+//! (ADR-042), through requests (protocol 1.1, ADR-056): it starts, speaks the protocol's version,
+//! opens sessions, returns results in the order the contract says, fails without hanging, obeys
+//! a cancel while a request runs and ends when its input closes. What replies look like is
+//! `tests/redis.rs`.
+//!
+//! It needs the test servers (`ci/services.sh`, `SPELAION_TEST_REDIS=127.0.0.1:16380` and
+//! `SPELAION_TEST_VALKEY=127.0.0.1:16381`). Without the variables it is skipped, which does
+//! not count as tested.
 
-use spelaion_driver_api::ConnectParams;
-use spelaion_plugin_host::conformance::{Target, assert_conforms};
+use serde_json::json;
+use spelaion_driver_api::{ConnectParams, Secret};
+use spelaion_plugin_host::conformance::{RequestTarget, assert_conforms_requests};
 
-const PROGRAM: &str = env!("CARGO_BIN_EXE_spelaiondb-plugin-example");
+const PROGRAM: &str = env!("CARGO_BIN_EXE_spelaiondb-plugin-redis");
+
+fn params(addr: &str) -> ConnectParams {
+    let (host, port) = addr.rsplit_once(':').expect("host:port");
+    ConnectParams {
+        host: host.into(),
+        port: port.parse().expect("a port"),
+        password: Some(Secret::new("spelaion")),
+        database: "0".into(),
+        ..Default::default()
+    }
+}
+
+fn target(addr: &str) -> RequestTarget {
+    RequestTarget {
+        program: PROGRAM.into(),
+        engine: "redis".into(),
+        params: params(addr),
+        one_row: json!({"args": ["PING"]}),
+        refused: json!({"args": ["NOSUCHCOMMAND"]}),
+        // A minute, unless it is cancelled: it waits for a list nobody pushes to.
+        slow: Some(json!({"args": ["BLPOP", "spelaion:conformance:nothing", "60"]})),
+    }
+}
 
 #[tokio::test]
-async fn the_plugin_conforms() {
-    let target = Target {
-        program: PROGRAM.into(),
-        engine: "example".into(),
-        // A plugin of a server reads where it is from the environment, as SpelaionDB's own
-        // tests do, and skips this test (saying so) when it is not set.
-        params: ConnectParams {
-            database: "main".into(),
-            ..Default::default()
-        },
-        one_row: "select 1".into(),
-        refused: "select * from a_table_that_is_not_there".into(),
-        // A statement that runs until it is cancelled; `None` for an engine that cannot cancel.
-        slow: Some("wait".into()),
+async fn the_plugin_conforms_on_redis() {
+    let Ok(addr) = std::env::var("SPELAION_TEST_REDIS") else {
+        eprintln!("SPELAION_TEST_REDIS not set: test skipped");
+        return;
     };
-    assert_conforms(&target).await;
+    assert_conforms_requests(&target(&addr)).await;
+}
+
+#[tokio::test]
+async fn the_plugin_conforms_on_valkey() {
+    let Ok(addr) = std::env::var("SPELAION_TEST_VALKEY") else {
+        eprintln!("SPELAION_TEST_VALKEY not set: test skipped");
+        return;
+    };
+    assert_conforms_requests(&target(&addr)).await;
 }
 
 /// `plugin.toml` is what SpelaionDB's pin says of this plugin: it must be what the program
-/// says of itself.
+/// says of itself. The program says it without a server.
 #[tokio::test]
 async fn the_manifest_is_what_the_program_says() {
     let manifest = include_str!("../plugin.toml");
